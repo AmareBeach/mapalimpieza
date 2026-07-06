@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa de Limpieza · Amàre Sancti Petri</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --tinta:#14303E;         /* marino profundo */
+  --arena:#F6F2E9;         /* fondo */
+  --carta:#FFFFFF;
+  --linea:#E2DACB;
+  --mar:#0E7490;           /* acento interactivo */
+  --critica:#8E1E14;
+  --roja:#C7382E;
+  --naranja:#E07B1F;
+  --amarilla:#D9A50B;
+  --amarilla-bg:#FFF3C4;
+  --verde:#2F7D4F;
+  --verde-bg:#E4F2E8;
+  --gris:#8A8677;
+  --radius:10px;
+  font-variant-numeric: tabular-nums;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Barlow Semi Condensed',system-ui,sans-serif;
+  background:var(--arena);color:var(--tinta);
+  font-size:16px;line-height:1.4;
+  padding-bottom:80px;
+}
+h1,h2,h3,.disp{font-family:'Barlow Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:.03em}
+header{
+  background:var(--tinta);color:var(--arena);
+  padding:14px 18px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+}
+header h1{font-size:26px;font-weight:700}
+header .fecha{font-size:15px;opacity:.75}
+main{max-width:1080px;margin:0 auto;padding:16px}
+
+/* ---------- pasos ---------- */
+.paso{background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);margin-bottom:14px;overflow:hidden}
+.paso>summary{
+  list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:12px;
+  font-family:'Barlow Condensed';font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  user-select:none;
+}
+.paso>summary::-webkit-details-marker{display:none}
+.paso>summary .num{
+  width:30px;height:30px;border-radius:50%;background:var(--tinta);color:var(--arena);
+  display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex:none;
+}
+.paso>summary .estado{margin-left:auto;font-family:'Barlow Semi Condensed';font-size:14px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--gris)}
+.paso>summary .estado.ok{color:var(--verde)}
+.paso .cuerpo{padding:0 16px 16px;border-top:1px solid var(--linea)}
+
+/* ---------- carga PDFs ---------- */
+.zonas{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+@media(max-width:640px){.zonas{grid-template-columns:1fr}}
+.drop{
+  border:2px dashed var(--linea);border-radius:var(--radius);padding:18px 14px;text-align:center;
+  background:var(--arena);cursor:pointer;transition:border-color .15s;
+}
+.drop:hover,.drop.arrastre{border-color:var(--mar)}
+.drop .tit{font-family:'Barlow Condensed';font-size:19px;font-weight:700;text-transform:uppercase}
+.drop .sub{font-size:14px;color:var(--gris);margin-top:2px}
+.drop .res{margin-top:8px;font-weight:600}
+.drop .res.ok{color:var(--verde)}
+.drop .res.err{color:var(--roja)}
+.drop input{display:none}
+details.alt{margin-top:10px;font-size:14px}
+details.alt summary{cursor:pointer;color:var(--mar);font-weight:600}
+details.alt textarea{width:100%;height:110px;margin-top:8px;font-family:monospace;font-size:13px;padding:8px;border:1px solid var(--linea);border-radius:6px}
+.nota{font-size:13px;color:var(--gris);margin-top:8px}
+
+/* ---------- filas dinámicas LCO / prolongaciones ---------- */
+.filas{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.fila{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fila input[type=text]{
+  flex:1;min-width:130px;padding:10px;border:1px solid var(--linea);border-radius:6px;
+  font-family:inherit;font-size:16px;
+}
+.fila select{padding:10px;border:1px solid var(--linea);border-radius:6px;font-family:inherit;font-size:16px;background:#fff}
+.fila .flecha{font-weight:700;color:var(--gris)}
+.fila label.hecha{display:flex;align-items:center;gap:5px;font-size:14px;color:var(--gris)}
+.fila button.quitar{
+  border:none;background:none;color:var(--roja);font-size:20px;cursor:pointer;padding:4px 8px;
+}
+button.mas{
+  margin-top:10px;padding:9px 16px;border:1px solid var(--mar);color:var(--mar);background:none;
+  border-radius:6px;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;
+}
+button.mas:hover{background:var(--mar);color:#fff}
+
+/* ---------- parámetros ---------- */
+.params{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:14px}
+.param label{display:block;font-size:13px;font-weight:600;color:var(--gris);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.param input{width:100%;padding:10px;border:1px solid var(--linea);border-radius:6px;font-size:16px;font-family:inherit}
+
+/* ---------- botón generar ---------- */
+.generar{
+  display:block;width:100%;padding:16px;margin:18px 0;
+  background:var(--mar);color:#fff;border:none;border-radius:var(--radius);
+  font-family:'Barlow Condensed';font-size:24px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  cursor:pointer;
+}
+.generar:hover{background:#0A5E75}
+.generar:disabled{background:var(--gris);cursor:not-allowed}
+
+/* ---------- resultados ---------- */
+#resultados{display:none}
+.resumen{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.chip{
+  background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);
+  padding:10px 16px;text-align:center;flex:1;min-width:100px;
+}
+.chip .n{font-family:'Barlow Condensed';font-size:30px;font-weight:700;line-height:1}
+.chip .t{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--gris);margin-top:2px}
+.chip.c-critica .n{color:var(--critica)} .chip.c-roja .n{color:var(--roja)}
+.chip.c-naranja .n{color:var(--naranja)} .chip.c-amarilla .n{color:var(--amarilla)}
+.chip.c-verde .n{color:var(--verde)}
+
+/* capacidad */
+.capacidad{background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
+.capacidad h3{font-size:18px;margin-bottom:8px}
+.barra{height:22px;background:var(--arena);border-radius:11px;overflow:hidden;border:1px solid var(--linea);position:relative}
+.barra .relleno{height:100%;border-radius:11px;transition:width .4s}
+.barra .relleno.cabe{background:var(--verde)}
+.barra .relleno.justo{background:var(--naranja)}
+.barra .relleno.excede{background:var(--roja)}
+.capacidad .leyenda{display:flex;justify-content:space-between;font-size:14px;margin-top:6px;color:var(--gris);flex-wrap:wrap;gap:4px}
+.capacidad .sugerencia{margin-top:10px;padding:10px;background:var(--verde-bg);border-radius:6px;font-size:15px}
+.capacidad .sugerencia.mal{background:#FBEAE8}
+
+/* avisos detección */
+.avisos{margin-bottom:14px}
+.aviso{
+  background:#FFF8E6;border:1px solid var(--amarilla);border-left:6px solid var(--amarilla);
+  border-radius:6px;padding:12px 14px;margin-bottom:8px;font-size:15px;
+}
+.aviso.fuerte{background:#FBEAE8;border-color:var(--roja);border-left-color:var(--roja)}
+.aviso b{font-weight:700}
+.aviso .etiq{
+  display:inline-block;background:var(--roja);color:#fff;font-size:12px;font-weight:700;
+  padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;margin-right:6px;
+}
+
+/* secciones de prioridad */
+.seccion{margin-bottom:18px}
+.seccion h2{
+  font-size:21px;padding:8px 14px;border-radius:6px;color:#fff;margin-bottom:10px;
+  display:flex;align-items:baseline;gap:10px;
+}
+.seccion h2 .cuenta{font-family:'Barlow Semi Condensed';font-size:14px;font-weight:600;opacity:.85;text-transform:none;letter-spacing:0}
+.seccion.s-critica h2{background:var(--critica)}
+.seccion.s-roja h2{background:var(--roja)}
+.seccion.s-naranja h2{background:var(--naranja)}
+.seccion.s-amarilla h2{background:var(--amarilla)}
+.seccion.s-verde h2{background:var(--verde)}
+.seccion.s-info h2{background:var(--gris)}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.tarjeta{
+  background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);
+  padding:12px 14px;position:relative;cursor:pointer;border-left-width:6px;
+}
+.tarjeta.b-critica{border-left-color:var(--critica)}
+.tarjeta.b-roja{border-left-color:var(--roja)}
+.tarjeta.b-naranja{border-left-color:var(--naranja)}
+.tarjeta.b-amarilla{border-left-color:var(--amarilla)}
+.tarjeta.b-verde{border-left-color:var(--verde)}
+.tarjeta .hab{font-family:'Barlow Condensed';font-size:30px;font-weight:700;line-height:1}
+.tarjeta .margen{
+  position:absolute;top:12px;right:12px;text-align:right;
+  font-family:'Barlow Condensed';font-size:19px;font-weight:700;
+}
+.tarjeta .margen small{display:block;font-family:'Barlow Semi Condensed';font-size:11px;font-weight:600;color:var(--gris);text-transform:uppercase;letter-spacing:.04em}
+.tarjeta .linea1{font-size:14px;margin-top:6px;color:var(--gris)}
+.tarjeta .linea1 b{color:var(--tinta);font-weight:600}
+.tarjeta .horas{margin-top:8px;font-size:14px;font-weight:600}
+.tarjeta .horas .lco{color:var(--roja)}
+.tarjeta.limpia{opacity:.45}
+.tarjeta.limpia::after{
+  content:'✓ LIMPIA';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed';font-size:26px;font-weight:700;color:var(--verde);
+  background:rgba(255,255,255,.55);border-radius:var(--radius);letter-spacing:.06em;
+}
+.tarjeta .tag{
+  display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  padding:2px 7px;border-radius:4px;margin-top:8px;margin-right:4px;
+}
+.tag.t-noinf{background:var(--roja);color:#fff}
+.tag.t-cambio{background:var(--mar);color:#fff}
+.tag.t-manana{background:var(--verde-bg);color:var(--verde)}
+
+/* rack por plantas */
+.rack{background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px}
+.rack h2{font-size:21px;margin-bottom:10px}
+.planta{margin-bottom:10px}
+.planta .ptit{font-family:'Barlow Condensed';font-size:16px;font-weight:700;color:var(--gris);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+.celdas{display:flex;flex-wrap:wrap;gap:6px}
+.celda{
+  min-width:58px;padding:7px 4px;border-radius:6px;text-align:center;color:#fff;
+  font-family:'Barlow Condensed';font-size:17px;font-weight:700;cursor:pointer;
+}
+.celda small{display:block;font-family:'Barlow Semi Condensed';font-size:10px;font-weight:600;opacity:.9}
+.celda.p-critica{background:var(--critica)} .celda.p-roja{background:var(--roja)}
+.celda.p-naranja{background:var(--naranja)} .celda.p-amarilla{background:var(--amarilla)}
+.celda.p-verde{background:var(--verde)}
+.celda.limpia{opacity:.35;text-decoration:line-through}
+.leyenda-rack{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--gris)}
+.leyenda-rack span::before{content:'●';margin-right:4px}
+.l-critica::before{color:var(--critica)} .l-roja::before{color:var(--roja)}
+.l-naranja::before{color:var(--naranja)} .l-amarilla::before{color:var(--amarilla)}
+.l-verde::before{color:var(--verde)}
+
+/* acciones finales */
+.acciones{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.acciones button{
+  flex:1;min-width:150px;padding:12px;border-radius:var(--radius);border:1px solid var(--tinta);
+  background:var(--carta);color:var(--tinta);font-family:'Barlow Condensed';font-size:18px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;cursor:pointer;
+}
+.acciones button:hover{background:var(--tinta);color:var(--arena)}
+.acciones button.peligro{border-color:var(--roja);color:var(--roja)}
+.acciones button.peligro:hover{background:var(--roja);color:#fff}
+
+/* impresión */
+@media print{
+  header,.paso,.generar,.acciones,.rack .celda{cursor:default}
+  .paso,.generar,.acciones{display:none!important}
+  body{background:#fff;padding:0}
+  header{background:#fff;color:#000;border-bottom:2px solid #000}
+  .tarjeta,.chip,.capacidad,.rack,.aviso{break-inside:avoid;border-color:#999}
+  .tarjeta.limpia::after{background:none}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mapa de limpieza</h1>
+  <span class="fecha" id="fechaDia">—</span>
+  <span class="fecha" style="margin-left:auto">Amàre Beach Hotel Sancti Petri</span>
+</header>
+<main>
+
+<!-- PASO 1: PDFs -->
+<details class="paso" id="paso1" open>
+  <summary><span class="num">1</span> Cargar listados del día <span class="estado" id="estado1">pendiente</span></summary>
+  <div class="cuerpo">
+    <div class="zonas">
+      <label class="drop" id="dropSalidas">
+        <div class="tit">PDF de salidas</div>
+        <div class="sub">Toca para elegir el archivo o arrástralo aquí</div>
+        <div class="res" id="resSalidas"></div>
+        <input type="file" accept="application/pdf" id="fileSalidas">
+      </label>
+      <label class="drop" id="dropLlegadas">
+        <div class="tit">PDF de llegadas</div>
+        <div class="sub">Toca para elegir el archivo o arrástralo aquí</div>
+        <div class="res" id="resLlegadas"></div>
+        <input type="file" accept="application/pdf" id="fileLlegadas">
+      </label>
+    </div>
+    <details class="alt">
+      <summary>¿Problemas con el PDF? Pegar el texto a mano</summary>
+      <p class="nota">Pega las líneas tal cual (una habitación por línea, p. ej. «1105 García López, María»).</p>
+      <textarea id="txtSalidas" placeholder="Texto de SALIDAS…"></textarea>
+      <textarea id="txtLlegadas" placeholder="Texto de LLEGADAS…"></textarea>
+      <button class="mas" id="btnTexto">Usar este texto</button>
+    </details>
+    <p class="nota">Las habitaciones 9000+ (virtuales) se excluyen automáticamente.</p>
+  </div>
+</details>
+
+<!-- PASO 2: LCO y prolongaciones -->
+<details class="paso" id="paso2" open>
+  <summary><span class="num">2</span> Late check-out y prolongaciones <span class="estado" id="estado2"></span></summary>
+  <div class="cuerpo">
+    <h3 style="margin-top:14px;font-size:17px">Late check-out concedidos</h3>
+    <p class="nota">Escribe una o varias habitaciones por fila (separadas por espacio, coma o barra) y la hora concedida.</p>
+    <div class="filas" id="filasLCO"></div>
+    <button class="mas" id="masLCO">+ Añadir late check-out</button>
+
+    <h3 style="margin-top:22px;font-size:17px">Prolongaciones y cambios informados</h3>
+    <p class="nota">Misma habitación en ambos campos = prolongación (solo repaso). Distinta = cambio de habitación.</p>
+    <div class="filas" id="filasProl"></div>
+    <button class="mas" id="masProl">+ Añadir prolongación / cambio</button>
+  </div>
+</details>
+
+<!-- PASO 3: parámetros -->
+<details class="paso" id="paso3">
+  <summary><span class="num">3</span> Parámetros del día <span class="estado" id="estado3"></span></summary>
+  <div class="cuerpo">
+    <div class="params">
+      <div class="param"><label>Hora de salida</label><input type="time" id="pCheckout" value="12:00"></div>
+      <div class="param"><label>Hora de entrada</label><input type="time" id="pCheckin" value="15:00"></div>
+      <div class="param"><label>Min. limpieza salida</label><input type="number" id="pTSalida" value="20" min="1"></div>
+      <div class="param"><label>Min. repaso prolongación</label><input type="number" id="pTRepaso" value="5" min="1"></div>
+      <div class="param"><label>Umbral urgente (min de margen)</label><input type="number" id="pUmbral" value="60" min="0"></div>
+      <div class="param"><label>Nº de camareras</label><input type="number" id="pCamareras" value="4" min="1"></div>
+      <div class="param"><label>Horas efectivas por camarera</label><input type="number" id="pHoras" value="6" min="1" step="0.5"></div>
+    </div>
+  </div>
+</details>
+
+<button class="generar" id="btnGenerar" disabled>Generar mapa de prioridades</button>
+
+<!-- RESULTADOS -->
+<div id="resultados">
+  <div class="avisos" id="avisos"></div>
+  <div class="resumen" id="resumen"></div>
+  <div class="capacidad" id="capacidad"></div>
+  <div class="rack" id="rack"></div>
+  <div id="secciones"></div>
+  <div class="acciones">
+    <button id="btnImprimir">Imprimir hoja</button>
+    <button id="btnCSV">Exportar CSV</button>
+    <button class="peligro" id="btnReset">Reiniciar día</button>
+  </div>
+</div>
+
+</main>
+<script>
+'use strict';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// En entornos aislados (vista previa) el worker no puede cargarse y pdf.js usa
+// un "fake worker" en el hilo principal: es normal y no afecta al resultado.
+// Silenciamos ese aviso concreto para no generar ruido en consola.
+(function(){
+  const warnOrig = console.warn.bind(console);
+  console.warn = function(...args){
+    if(String(args[0]||'').includes('fake worker')) return;
+    warnOrig(...args);
+  };
+})();
+
+/* ================= ESTADO ================= */
+const state = {
+  salidas: [],      // {room, name, toks}
+  llegadas: [],
+  fecha: null,      // 'DD.MM.YYYY' del PDF
+  limpias: {},      // room -> true
+  resultados: null,
+};
+
+const LS_PARAMS = 'mapaLimpieza.params';
+const LS_DIA    = 'mapaLimpieza.dia';
+
+/* ================= UTILIDADES ================= */
+const $ = id => document.getElementById(id);
+const STOPWORDS = new Set(['DE','DEL','LA','LAS','LOS','EL','Y','DA','DO','VAN','VON','SAN']);
+const CATCODES  = new Set(['CAB','CAS','CAD','IW','KTS','OHLA']);
+
+function normalizeName(raw){
+  let s = raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  s = s.replace(/[´`'’^~¨\-\.]/g,'').toUpperCase().replace(/,/g,' ');
+  const toks = s.split(/\s+/).filter(t=>t && !CATCODES.has(t));
+  return [...new Set(toks.filter(t=>!STOPWORDS.has(t) && t.length>=3))];
+}
+function parseListado(text){
+  const out=[]; const seen=new Set();
+  for(const line of text.split('\n')){
+    const m = line.trim().match(/^(\d{4})\s+(.+)$/);
+    if(!m) continue;
+    const room = m[1];
+    if(parseInt(room,10)>=9000) continue;   // virtuales
+    if(seen.has(room+'|'+m[2])) continue;
+    seen.add(room+'|'+m[2]);
+    out.push({room, name:m[2].trim(), toks:normalizeName(m[2])});
+  }
+  return out;
+}
+function hhmmToMin(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
+function minToHHMM(min){
+  min = Math.max(0,min);
+  const h=Math.floor(min/60), m=min%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+}
+function nombreCorto(n){
+  const p = n.replace(/,/g,'').split(/\s+/).filter(Boolean);
+  return p.slice(0,2).join(' ');
+}
+function splitRooms(txt){
+  return (txt.match(/\d{4}/g)||[]);
+}
+
+/* ================= EXTRACCIÓN PDF ================= */
+async function extractLines(file){
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({data:buf}).promise;
+  const lines=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    const rows = new Map();
+    for(const it of tc.items){
+      if(!it.str) continue;
+      const y = it.transform[5];
+      let key=null;
+      for(const k of rows.keys()){ if(Math.abs(k-y)<=2){key=k;break;} }
+      if(key===null){key=y; rows.set(key,[]);}
+      rows.get(key).push({x:it.transform[4], w:it.width||0, s:it.str});
+    }
+    const ys=[...rows.keys()].sort((a,b)=>b-a);
+    for(const y of ys){
+      const items = rows.get(y).sort((a,b)=>a.x-b.x);
+      let line='', endX=null;
+      for(const it of items){
+        if(endX!==null && it.x-endX>1.5) line+=' ';
+        line+=it.s;
+        endX=it.x+it.w;
+      }
+      lines.push(line.replace(/\s+/g,' ').trim());
+    }
+  }
+  return lines;
+}
+function fechaDePDF(lines){
+  for(const l of lines){
+    const m = l.match(/Fecha\s+(\d{2}\.\d{2}\.\d{4})/);
+    if(m) return m[1];
+  }
+  return null;
+}
+
+async function cargarPDF(file, tipo){
+  const res = tipo==='salidas' ? $('resSalidas') : $('resLlegadas');
+  res.className='res'; res.textContent='Leyendo…';
+  try{
+    const lines = await extractLines(file);
+    const listado = parseListado(lines.join('\n'));
+    if(listado.length===0) throw new Error('No se encontraron habitaciones. Prueba a pegar el texto a mano.');
+    state[tipo]=listado;
+    const f = fechaDePDF(lines);
+    if(f){ state.fecha=f; $('fechaDia').textContent=f; comprobarDiaGuardado(); }
+    res.className='res ok';
+    res.textContent='✓ '+file.name+' · '+listado.length+' habitaciones';
+    actualizarEstado();
+  }catch(e){
+    res.className='res err';
+    res.textContent='✗ '+(e.message||'Error al leer el PDF');
+  }
+}
+
+/* ================= FILAS DINÁMICAS ================= */
+const HORAS_LCO = ['13:00','14:00','15:00','16:00','17:00','18:00'];
+
+function filaLCO(rooms='', hora='14:00'){
+  const div=document.createElement('div'); div.className='fila';
+  div.innerHTML = `
+    <input type="text" class="lco-rooms" inputmode="numeric" placeholder="Habitaciones (ej. 3107 / 2041 2042)" value="${rooms}">
+    <select class="lco-hora">${HORAS_LCO.map(h=>`<option ${h===hora?'selected':''}>${h}</option>`).join('')}</select>
+    <button class="quitar" title="Quitar">✕</button>`;
+  div.querySelector('.quitar').onclick=()=>{div.remove(); guardarDia();};
+  div.querySelectorAll('input,select').forEach(el=>el.addEventListener('change',guardarDia));
+  $('filasLCO').appendChild(div);
+}
+function filaProl(de='', a='', hecha=false){
+  const div=document.createElement('div'); div.className='fila';
+  div.innerHTML = `
+    <input type="text" class="prol-de" inputmode="numeric" placeholder="Sale de…" value="${de}" style="max-width:130px">
+    <span class="flecha">→</span>
+    <input type="text" class="prol-a" inputmode="numeric" placeholder="Sigue en…" value="${a}" style="max-width:130px">
+    <label class="hecha"><input type="checkbox" class="prol-hecha" ${hecha?'checked':''}> hecha</label>
+    <button class="quitar" title="Quitar">✕</button>`;
+  div.querySelector('.quitar').onclick=()=>{div.remove(); guardarDia();};
+  div.querySelectorAll('input').forEach(el=>el.addEventListener('change',guardarDia));
+  $('filasProl').appendChild(div);
+}
+$('masLCO').onclick=()=>filaLCO();
+$('masProl').onclick=()=>filaProl();
+
+function leerLCO(){
+  const map={}; // room -> hora
+  document.querySelectorAll('#filasLCO .fila').forEach(f=>{
+    const rooms=splitRooms(f.querySelector('.lco-rooms').value);
+    const hora=f.querySelector('.lco-hora').value;
+    rooms.forEach(r=>map[r]=hora);
+  });
+  return map;
+}
+function leerProl(){
+  const out=[];
+  document.querySelectorAll('#filasProl .fila').forEach(f=>{
+    const de=splitRooms(f.querySelector('.prol-de').value)[0];
+    const a =splitRooms(f.querySelector('.prol-a').value)[0];
+    const hecha=f.querySelector('.prol-hecha').checked;
+    if(de&&a) out.push({de,a,hecha});
+  });
+  return out;
+}
+
+/* ================= DETECCIÓN POR NOMBRE ================= */
+function detectarCoincidencias(){
+  const freq={};
+  for(const e of [...state.salidas,...state.llegadas])
+    for(const t of e.toks) freq[t]=(freq[t]||0)+1;
+  const res=[];
+  for(const s of state.salidas){
+    for(const l of state.llegadas){
+      const setB=new Set(l.toks);
+      const shared=s.toks.filter(t=>setB.has(t));
+      const minLen=Math.min(s.toks.length,l.toks.length);
+      if(minLen===0) continue;
+      const ratio=shared.length/minLen;
+      const rare=shared.filter(t=>freq[t]<=3).length;
+      const sameRoom=s.room===l.room;
+      let ok=false;
+      if(shared.length>=2 && ratio>=0.65 && rare>=1) ok=true;
+      if(shared.length>=3 && ratio>=0.75) ok=true;
+      if(sameRoom && shared.length>=2 && ratio>=0.65) ok=true;
+      if(ok) res.push({de:s.room, a:l.room, ns:s.name, nl:l.name, sameRoom});
+    }
+  }
+  return res;
+}
+
+/* ================= CÁLCULO ================= */
+function calcular(){
+  const P = leerParams();
+  const lco = leerLCO();
+  const prolInformadas = leerProl();
+  const detectadas = detectarCoincidencias();
+
+  const salidaRooms = new Map(state.salidas.map(s=>[s.room,s]));
+  const llegadaRooms = new Map();
+  state.llegadas.forEach(l=>{ if(!llegadaRooms.has(l.room)) llegadaRooms.set(l.room,l); });
+
+  // habitaciones que son prolongación (misma hab en informadas o detectadas mismo cuarto)
+  const prolongSet = new Set();
+  prolInformadas.filter(p=>p.de===p.a).forEach(p=>prolongSet.add(p.de));
+  const avisos=[];
+  detectadas.filter(d=>d.sameRoom).forEach(d=>{
+    if(!prolongSet.has(d.de)){
+      avisos.push({tipo:'noinformada', room:d.de, texto:`La habitación <b>${d.de}</b> aparece en salidas y llegadas con el mismo huésped (<b>${d.ns}</b>). Es una <b>prolongación NO informada</b>: confírmala con recepción. Se tratará como repaso.`});
+    }
+    prolongSet.add(d.de);
+  });
+  // cambios de habitación informados (de≠a) y detectados
+  const cambios=[];
+  prolInformadas.filter(p=>p.de!==p.a).forEach(p=>cambios.push({de:p.de,a:p.a,fuente:'informado'}));
+  detectadas.filter(d=>!d.sameRoom).forEach(d=>{
+    if(!cambios.some(c=>c.de===d.de&&c.a===d.a)){
+      cambios.push({de:d.de,a:d.a,fuente:'detectado',ns:d.ns,nl:d.nl});
+      avisos.push({tipo:'cambio', room:d.de, texto:`Posible <b>cambio de habitación</b> detectado por nombre: <b>${d.de} → ${d.a}</b> (${d.ns}). La ${d.de} se limpia como salida; la ${d.a} no estará libre hasta que el huésped se mude.`});
+    }
+  });
+  const cambioDestino = new Map(cambios.map(c=>[c.a,c]));
+  const cambioOrigen  = new Map(cambios.map(c=>[c.de,c]));
+
+  const checkout = hhmmToMin(P.checkout), checkin = hhmmToMin(P.checkin);
+  const tarjetas=[];
+
+  for(const s of state.salidas){
+    const room=s.room;
+    const esProl = prolongSet.has(room);
+    const lcoHora = lco[room] ? hhmmToMin(lco[room]) : null;
+    const disponible = lcoHora ? Math.max(checkout,lcoHora) : checkout;
+    const llegada = llegadaRooms.get(room);
+    const esRotacion = !!llegada && !esProl;
+
+    let prio, margen=null, dur;
+    if(esProl){
+      prio='amarilla'; dur=P.tRepaso;
+    }else if(esRotacion){
+      dur=P.tSalida;
+      margen = checkin - disponible - dur;      // min de colchón antes del check-in
+      if(margen<0) prio='critica';
+      else if(margen<=P.umbral) prio='roja';
+      else prio='naranja';
+      if(lcoHora && lcoHora>=checkin){
+        avisos.push({tipo:'conflicto', room, texto:`<span class="etiq">Conflicto</span> La <b>${room}</b> tiene late check-out hasta las <b>${lco[room]}</b> pero entra un cliente nuevo hoy (<b>${nombreCorto(llegada.name)}</b>). Imposible tenerla lista a las ${P.checkin}. Avisar a recepción.`});
+      }
+    }else{
+      prio='verde'; dur=P.tSalida;
+    }
+    tarjetas.push({
+      room, prio, dur, margen,
+      sale:s.name,
+      entra: llegada && !esProl ? llegada.name : null,
+      lco: lco[room]||null,
+      desde: minToHHMM(disponible),
+      esProl, esRotacion,
+      cambioO: cambioOrigen.get(room)||null,
+      cambioD: null,
+    });
+  }
+  // llegadas cuya habitación no sale hoy (ya libre) — informativas
+  const llegadasLibres=[];
+  for(const [room,l] of llegadaRooms){
+    if(!salidaRooms.has(room)) llegadasLibres.push({room, entra:l.name, cambioD:cambioDestino.get(room)||null});
+  }
+
+  // orden: margen ascendente dentro de cada prioridad
+  const orden={critica:0,roja:1,naranja:2,amarilla:3,verde:4};
+  tarjetas.sort((a,b)=> orden[a.prio]-orden[b.prio] || (a.margen??999)-(b.margen??999) || a.room.localeCompare(b.room));
+
+  // capacidad
+  const necesarios = tarjetas.reduce((acc,t)=>acc+t.dur,0);
+  const disponibles = P.nCamareras * P.horas * 60;
+  let dejarManana=[];
+  if(necesarios>disponibles){
+    let exceso = necesarios-disponibles;
+    const verdes = tarjetas.filter(t=>t.prio==='verde').slice().reverse();
+    for(const v of verdes){
+      if(exceso<=0) break;
+      dejarManana.push(v.room); exceso-=v.dur;
+    }
+  }
+  const mananaSet=new Set(dejarManana);
+  tarjetas.forEach(t=>t.manana=mananaSet.has(t.room));
+
+  state.resultados={tarjetas, llegadasLibres, avisos, necesarios, disponibles, dejarManana, P};
+}
+
+function leerParams(){
+  return {
+    checkout:$('pCheckout').value||'12:00',
+    checkin:$('pCheckin').value||'15:00',
+    tSalida:parseInt($('pTSalida').value,10)||20,
+    tRepaso:parseInt($('pTRepaso').value,10)||5,
+    umbral:parseInt($('pUmbral').value,10)||60,
+    nCamareras:parseInt($('pCamareras').value,10)||1,
+    horas:parseFloat($('pHoras').value)||6,
+  };
+}
+
+/* ================= RENDER ================= */
+const TITULOS={
+  critica:'Críticas · no llegan al check-in',
+  roja:'Urgentes · margen mínimo',
+  naranja:'Rotaciones · entra cliente hoy',
+  amarilla:'Repasos · prolongaciones',
+  verde:'Sin entrada hoy · pueden esperar',
+};
+function render(){
+  const R=state.resultados; if(!R) return;
+  $('resultados').style.display='block';
+
+  // avisos
+  $('avisos').innerHTML = R.avisos.map(a=>
+    `<div class="aviso ${a.tipo==='conflicto'?'fuerte':''}">${a.texto}</div>`).join('');
+
+  // resumen
+  const cuenta=p=>R.tarjetas.filter(t=>t.prio===p).length;
+  $('resumen').innerHTML = ['critica','roja','naranja','amarilla','verde'].map(p=>
+    `<div class="chip c-${p}"><div class="n">${cuenta(p)}</div><div class="t">${
+      {critica:'Críticas',roja:'Urgentes',naranja:'Rotaciones',amarilla:'Repasos',verde:'Pueden esperar'}[p]
+    }</div></div>`).join('');
+
+  // capacidad
+  const pct=Math.min(100, R.necesarios/R.disponibles*100);
+  const clase = R.necesarios<=R.disponibles*0.85?'cabe':(R.necesarios<=R.disponibles?'justo':'excede');
+  let sug;
+  if(R.necesarios<=R.disponibles){
+    sug=`<div class="sugerencia">✓ El día cabe: sobran <b>${R.disponibles-R.necesarios} min</b> de capacidad.</div>`;
+  }else{
+    sug=`<div class="sugerencia mal">⚠ Faltan <b>${R.necesarios-R.disponibles} min</b>. Sugerencia: dejar para mañana las habitaciones <b>${R.dejarManana.join(', ')||'—'}</b> (sin entrada hoy).</div>`;
+  }
+  $('capacidad').innerHTML=`
+    <h3 class="disp">¿Cabe el día?</h3>
+    <div class="barra"><div class="relleno ${clase}" style="width:${pct}%"></div></div>
+    <div class="leyenda"><span>Trabajo: <b>${R.necesarios} min</b> (${R.tarjetas.length} habitaciones)</span>
+    <span>Capacidad: <b>${R.disponibles} min</b> (${R.P.nCamareras} camareras × ${R.P.horas} h)</span></div>${sug}`;
+
+  // rack por plantas
+  const plantas={};
+  R.tarjetas.forEach(t=>{ const p=t.room[0]; (plantas[p]=plantas[p]||[]).push(t); });
+  $('rack').innerHTML='<h2>Mapa por plantas</h2>'+
+    Object.keys(plantas).sort().map(p=>`
+      <div class="planta"><div class="ptit">Zona ${p}000</div>
+      <div class="celdas">${plantas[p].sort((a,b)=>a.room.localeCompare(b.room)).map(t=>`
+        <div class="celda p-${t.prio} ${state.limpias[t.room]?'limpia':''}" data-room="${t.room}">
+          ${t.room}${t.lco?`<small>LCO ${t.lco}</small>`:(t.esProl?'<small>repaso</small>':'')}
+        </div>`).join('')}</div></div>`).join('')+
+    `<div class="leyenda-rack">
+      <span class="l-critica">Crítica</span><span class="l-roja">Urgente</span>
+      <span class="l-naranja">Rotación</span><span class="l-amarilla">Repaso</span>
+      <span class="l-verde">Puede esperar</span> · Toca una habitación para marcarla limpia</div>`;
+
+  // secciones
+  $('secciones').innerHTML = ['critica','roja','naranja','amarilla','verde'].map(p=>{
+    const ts=R.tarjetas.filter(t=>t.prio===p);
+    if(!ts.length) return '';
+    return `<div class="seccion s-${p}"><h2>${TITULOS[p]} <span class="cuenta">${ts.length} hab.</span></h2>
+      <div class="tarjetas">${ts.map(t=>tarjetaHTML(t,R.P)).join('')}</div></div>`;
+  }).join('') + (R.llegadasLibres.length?`
+    <div class="seccion s-info"><h2>Entradas a habitación ya libre <span class="cuenta">${R.llegadasLibres.length} hab. · no requieren limpieza de salida</span></h2>
+    <div class="tarjetas">${R.llegadasLibres.map(l=>`
+      <div class="tarjeta"><div class="hab">${l.room}</div>
+      <div class="linea1">Entra: <b>${nombreCorto(l.entra)}</b></div>
+      ${l.cambioD?`<span class="tag t-cambio">Recibe cambio desde ${l.cambioD.de}</span>`:''}</div>`).join('')}</div></div>`:'');
+
+  // interacciones marcar limpia
+  document.querySelectorAll('[data-room]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const r=el.dataset.room;
+      state.limpias[r]=!state.limpias[r];
+      guardarDia(); render();
+    });
+  });
+}
+function tarjetaHTML(t,P){
+  const margenTxt = t.margen===null?'':(
+    t.margen<0
+      ? `<div class="margen" style="color:var(--critica)">−${Math.abs(t.margen)}′<small>de retraso</small></div>`
+      : `<div class="margen">${t.margen}′<small>de margen</small></div>`);
+  return `<div class="tarjeta b-${t.prio} ${state.limpias[t.room]?'limpia':''}" data-room="${t.room}">
+    <div class="hab">${t.room}</div>${margenTxt}
+    <div class="linea1">Sale: <b>${nombreCorto(t.sale)}</b></div>
+    ${t.entra?`<div class="linea1">Entra: <b>${nombreCorto(t.entra)}</b></div>`:''}
+    <div class="horas">
+      ${t.lco?`<span class="lco">LCO hasta ${t.lco}</span> · `:''}
+      Limpiar desde ${t.desde}${t.esRotacion?` · lista antes de ${P.checkin}`:''} · ${t.dur}′
+    </div>
+    ${t.esProl?'<span class="tag" style="background:var(--amarilla-bg);color:#7a5c00">Solo repaso</span>':''}
+    ${t.cambioO?`<span class="tag t-cambio">Se muda a ${t.cambioO.a}</span>`:''}
+    ${t.manana?'<span class="tag t-manana">Candidata a mañana</span>':''}
+  </div>`;
+}
+
+/* ================= PERSISTENCIA ================= */
+function guardarParams(){ localStorage.setItem(LS_PARAMS, JSON.stringify(leerParams())); }
+function cargarParams(){
+  try{
+    const p=JSON.parse(localStorage.getItem(LS_PARAMS)||'null'); if(!p) return;
+    $('pCheckout').value=p.checkout; $('pCheckin').value=p.checkin;
+    $('pTSalida').value=p.tSalida; $('pTRepaso').value=p.tRepaso;
+    $('pUmbral').value=p.umbral??60;
+    $('pCamareras').value=p.nCamareras; $('pHoras').value=p.horas;
+  }catch(e){}
+}
+function guardarDia(){
+  const dia={
+    fecha:state.fecha,
+    limpias:state.limpias,
+    lco:[...document.querySelectorAll('#filasLCO .fila')].map(f=>({
+      rooms:f.querySelector('.lco-rooms').value, hora:f.querySelector('.lco-hora').value})),
+    prol:[...document.querySelectorAll('#filasProl .fila')].map(f=>({
+      de:f.querySelector('.prol-de').value, a:f.querySelector('.prol-a').value,
+      hecha:f.querySelector('.prol-hecha').checked})),
+  };
+  localStorage.setItem(LS_DIA, JSON.stringify(dia));
+}
+function comprobarDiaGuardado(){
+  try{
+    const d=JSON.parse(localStorage.getItem(LS_DIA)||'null'); if(!d) return;
+    if(d.fecha && state.fecha && d.fecha!==state.fecha){
+      // día nuevo: limpiar estado del día anterior
+      localStorage.removeItem(LS_DIA);
+      state.limpias={};
+      return;
+    }
+    state.limpias=d.limpias||{};
+    if(!document.querySelector('#filasLCO .fila') && d.lco?.length){
+      d.lco.forEach(x=>filaLCO(x.rooms,x.hora));
+    }
+    if(!document.querySelector('#filasProl .fila') && d.prol?.length){
+      d.prol.forEach(x=>filaProl(x.de,x.a,x.hecha));
+    }
+  }catch(e){}
+}
+
+/* ================= EVENTOS ================= */
+function actualizarEstado(){
+  const s=state.salidas.length, l=state.llegadas.length;
+  $('estado1').textContent = s&&l ? `✓ ${s} salidas · ${l} llegadas` : (s||l? (s?`${s} salidas · falta llegadas`:`${l} llegadas · falta salidas`) : 'pendiente');
+  $('estado1').className = 'estado'+(s&&l?' ok':'');
+  $('btnGenerar').disabled = !(s&&l);
+}
+['Salidas','Llegadas'].forEach(t=>{
+  const drop=$('drop'+t), input=$('file'+t), tipo=t.toLowerCase();
+  input.addEventListener('change',e=>{ if(e.target.files[0]) cargarPDF(e.target.files[0],tipo); });
+  drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('arrastre');});
+  drop.addEventListener('dragleave',()=>drop.classList.remove('arrastre'));
+  drop.addEventListener('drop',e=>{
+    e.preventDefault();drop.classList.remove('arrastre');
+    if(e.dataTransfer.files[0]) cargarPDF(e.dataTransfer.files[0],tipo);
+  });
+});
+$('btnTexto').onclick=()=>{
+  const ts=$('txtSalidas').value.trim(), tl=$('txtLlegadas').value.trim();
+  if(ts){ state.salidas=parseListado(ts); $('resSalidas').className='res ok'; $('resSalidas').textContent='✓ texto pegado · '+state.salidas.length+' habitaciones'; }
+  if(tl){ state.llegadas=parseListado(tl); $('resLlegadas').className='res ok'; $('resLlegadas').textContent='✓ texto pegado · '+state.llegadas.length+' habitaciones'; }
+  actualizarEstado();
+};
+$('btnGenerar').onclick=()=>{
+  guardarParams(); guardarDia();
+  calcular(); render();
+  $('paso1').open=false; $('paso2').open=false; $('paso3').open=false;
+  $('resultados').scrollIntoView({behavior:'smooth'});
+};
+$('btnImprimir').onclick=()=>{
+  try{
+    window.print();
+  }catch(e){
+    alert('La impresión está bloqueada en esta vista previa. Abre la app en Netlify o directamente en el navegador para imprimir.');
+  }
+};
+$('btnReset').onclick=()=>{
+  if(confirm('¿Reiniciar el día? Se borran late check-outs, prolongaciones y marcas de limpieza.')){
+    localStorage.removeItem(LS_DIA);
+    location.reload();
+  }
+};
+$('btnCSV').onclick=()=>{
+  const R=state.resultados; if(!R) return;
+  const filas=[['Habitacion','Prioridad','Margen_min','Limpiar_desde','LCO','Duracion_min','Sale','Entra','Limpia','Dejar_manana']];
+  R.tarjetas.forEach(t=>filas.push([
+    t.room,t.prio,t.margen??'',t.desde,t.lco||'',t.dur,
+    t.sale.replace(/,/g,' '),(t.entra||'').replace(/,/g,' '),
+    state.limpias[t.room]?'SI':'',t.manana?'SI':'',
+  ]));
+  const csv=filas.map(f=>f.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='mapa-limpieza-'+(state.fecha||'dia').replace(/\./g,'-')+'.csv';
+  a.click();
+};
+document.querySelectorAll('.params input').forEach(el=>el.addEventListener('change',guardarParams));
+
+/* ================= INICIO ================= */
+cargarParams();
+comprobarDiaGuardado();
+if(!document.querySelector('#filasLCO .fila')) filaLCO();
+if(!document.querySelector('#filasProl .fila')) filaProl();
+actualizarEstado();
+</script>
+</body>
+</html>
