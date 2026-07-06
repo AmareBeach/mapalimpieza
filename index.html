@@ -21,6 +21,8 @@
   --amarilla-bg:#FFF3C4;
   --verde:#2F7D4F;
   --verde-bg:#E4F2E8;
+  --azul:#1D5C8C;
+  --azul-bg:#E3EDF6;
   --gris:#8A8677;
   --radius:10px;
   font-variant-numeric: tabular-nums;
@@ -122,6 +124,7 @@ button.mas:hover{background:var(--mar);color:#fff}
 .chip.c-critica .n{color:var(--critica)} .chip.c-roja .n{color:var(--roja)}
 .chip.c-naranja .n{color:var(--naranja)} .chip.c-amarilla .n{color:var(--amarilla)}
 .chip.c-verde .n{color:var(--verde)}
+.chip.c-azul .n{color:var(--azul)}
 
 /* capacidad */
 .capacidad{background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
@@ -160,6 +163,7 @@ button.mas:hover{background:var(--mar);color:#fff}
 .seccion.s-naranja h2{background:var(--naranja)}
 .seccion.s-amarilla h2{background:var(--amarilla)}
 .seccion.s-verde h2{background:var(--verde)}
+.seccion.s-azul h2{background:var(--azul)}
 .seccion.s-info h2{background:var(--gris)}
 .tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .tarjeta{
@@ -171,6 +175,7 @@ button.mas:hover{background:var(--mar);color:#fff}
 .tarjeta.b-naranja{border-left-color:var(--naranja)}
 .tarjeta.b-amarilla{border-left-color:var(--amarilla)}
 .tarjeta.b-verde{border-left-color:var(--verde)}
+.tarjeta.b-azul{border-left-color:var(--azul)}
 .tarjeta .hab{font-family:'Barlow Condensed';font-size:30px;font-weight:700;line-height:1}
 .tarjeta .margen{
   position:absolute;top:12px;right:12px;text-align:right;
@@ -194,6 +199,9 @@ button.mas:hover{background:var(--mar);color:#fff}
 .tag.t-noinf{background:var(--roja);color:#fff}
 .tag.t-cambio{background:var(--mar);color:#fff}
 .tag.t-manana{background:var(--verde-bg);color:var(--verde)}
+.tag.t-ayer{background:var(--azul-bg);color:var(--azul)}
+.tag.t-lista{background:var(--verde-bg);color:var(--verde)}
+.tag.t-revisar{background:#FFF3C4;color:#7a5c00}
 
 /* rack por plantas */
 .rack{background:var(--carta);border:1px solid var(--linea);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px}
@@ -209,12 +217,14 @@ button.mas:hover{background:var(--mar);color:#fff}
 .celda.p-critica{background:var(--critica)} .celda.p-roja{background:var(--roja)}
 .celda.p-naranja{background:var(--naranja)} .celda.p-amarilla{background:var(--amarilla)}
 .celda.p-verde{background:var(--verde)}
+.celda.p-azul{background:var(--azul)}
 .celda.limpia{opacity:.35;text-decoration:line-through}
 .leyenda-rack{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--gris)}
 .leyenda-rack span::before{content:'●';margin-right:4px}
 .l-critica::before{color:var(--critica)} .l-roja::before{color:var(--roja)}
 .l-naranja::before{color:var(--naranja)} .l-amarilla::before{color:var(--amarilla)}
 .l-verde::before{color:var(--verde)}
+.l-azul::before{color:var(--azul)}
 
 /* acciones finales */
 .acciones{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
@@ -264,6 +274,12 @@ button.mas:hover{background:var(--mar);color:#fff}
         <div class="res" id="resLlegadas"></div>
         <input type="file" accept="application/pdf" id="fileLlegadas">
       </label>
+      <label class="drop" id="dropRack" style="grid-column:1/-1">
+        <div class="tit">PDF Rack de habitaciones <span style="font-weight:400;text-transform:none">(opcional)</span></div>
+        <div class="sub">Añade el estado real de cada habitación: sucias de ayer, pendientes de revisar y listas</div>
+        <div class="res" id="resRack"></div>
+        <input type="file" accept="application/pdf" id="fileRack">
+      </label>
     </div>
     <details class="alt">
       <summary>¿Problemas con el PDF? Pegar el texto a mano</summary>
@@ -299,6 +315,7 @@ button.mas:hover{background:var(--mar);color:#fff}
     <div class="params">
       <div class="param"><label>Hora de salida</label><input type="time" id="pCheckout" value="12:00"></div>
       <div class="param"><label>Hora de entrada</label><input type="time" id="pCheckin" value="15:00"></div>
+      <div class="param"><label>Inicio de jornada</label><input type="time" id="pInicio" value="09:00"></div>
       <div class="param"><label>Min. limpieza salida</label><input type="number" id="pTSalida" value="20" min="1"></div>
       <div class="param"><label>Min. repaso prolongación</label><input type="number" id="pTRepaso" value="5" min="1"></div>
       <div class="param"><label>Umbral urgente (min de margen)</label><input type="number" id="pUmbral" value="60" min="0"></div>
@@ -343,6 +360,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 const state = {
   salidas: [],      // {room, name, toks}
   llegadas: [],
+  rack: null,       // {estados:{room->'limpia'|'sucia'|'pendiente'|'noactuar'}, fecha}
   fecha: null,      // 'DD.MM.YYYY' del PDF
   limpias: {},      // room -> true
   resultados: null,
@@ -444,6 +462,103 @@ async function cargarPDF(file, tipo){
   }catch(e){
     res.className='res err';
     res.textContent='✗ '+(e.message||'Error al leer el PDF');
+  }
+}
+
+
+/* ================= RACK: ESTADO POR COLOR DE ICONO ================= */
+function clasificarPixeles(data){
+  let rojo=0, verde=0, amarillo=0, n=0;
+  for(let i=0;i<data.length;i+=4){
+    const r=data[i], g=data[i+1], b=data[i+2];
+    n++;
+    if(r>100 && r-g>40 && r-b>40) rojo++;
+    else if(g>90 && g-r>20 && g-b>10) verde++;
+    else if(r>130 && g>110 && b<110 && Math.abs(r-g)<60) amarillo++;
+  }
+  const pr=rojo/n*100, pv=verde/n*100, pa=amarillo/n*100;
+  if(pa>=8) return 'noactuar';                 // círculo amarillo/negro (bloqueada u ocupada)
+  if(pr>=15 && pv<2) return 'sucia';
+  if(pv>=4 && pr>=1.5) return 'pendiente';     // muñeco rojo + punto verde
+  if(pv>=8) return 'limpia';
+  return null;
+}
+async function parseRackPDF(file){
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({data:buf}).promise;
+  const estados = {};
+  const ocupadas = {};
+  let fecha = null;
+  for(let p=1;p<=doc.numPages;p++){
+    const page = await doc.getPage(p);
+    const viewport = page.getViewport({scale:2});
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d', {willReadFrequently:true});
+    await page.render({canvasContext:ctx, viewport}).promise;
+    const tc = await page.getTextContent();
+    // reconstruir líneas con su Y para localizar cada habitación
+    const rows = new Map();
+    for(const it of tc.items){
+      if(!it.str) continue;
+      const y = it.transform[5];
+      let key=null;
+      for(const k of rows.keys()){ if(Math.abs(k-y)<=2){key=k;break;} }
+      if(key===null){key=y; rows.set(key,[]);}
+      rows.get(key).push({x:it.transform[4], w:it.width||0, s:it.str});
+    }
+    for(const [y,items] of rows){
+      items.sort((a,b)=>a.x-b.x);
+      let line='', endX=null;
+      for(const it of items){
+        if(endX!==null && it.x-endX>1.5) line+=' ';
+        line+=it.s; endX=it.x+it.w;
+      }
+      line=line.replace(/\s+/g,' ').trim();
+      if(!fecha){
+        const mf=line.match(/Fecha (\d{2}\.\d{2}\.\d{4})/);
+        if(mf) fecha=mf[1];
+      }
+      const m = line.match(/^(\d{4})(S?)\b/);
+      if(!m || m[2]==='S' || items[0].x>20) continue;
+      const room = m[1];
+      if(parseInt(room,10)>=9000 || estados[room]) continue;
+      ocupadas[room] = /C{4,}/.test(line);   // barra CCCC = cliente dentro
+      // zona del icono en coords PDF: x 23–30, y = línea de base .. +5
+      const [x1,y1] = viewport.convertToViewportPoint(23, y-0.5);
+      const [x2,y2] = viewport.convertToViewportPoint(30.5, y+5);
+      const rx=Math.min(x1,x2), ry=Math.min(y1,y2);
+      const rw=Math.abs(x2-x1), rh=Math.abs(y2-y1);
+      try{
+        const img = ctx.getImageData(Math.round(rx),Math.round(ry),Math.max(2,Math.round(rw)),Math.max(2,Math.round(rh)));
+        const est = clasificarPixeles(img.data);
+        if(est) estados[room]=est;
+      }catch(e){}
+    }
+    canvas.width=canvas.height=0;
+  }
+  return {estados, ocupadas, fecha};
+}
+async function cargarRack(file){
+  const res = $('resRack');
+  res.className='res'; res.textContent='Leyendo y analizando iconos…';
+  try{
+    const rack = await parseRackPDF(file);
+    const n = Object.keys(rack.estados).length;
+    if(n===0) throw new Error('No se pudo leer el estado de las habitaciones.');
+    state.rack = rack;
+    const c = {limpia:0,sucia:0,pendiente:0,noactuar:0};
+    Object.values(rack.estados).forEach(e=>c[e]++);
+    res.className='res ok';
+    res.textContent=`✓ ${file.name} · ${n} hab: ${c.limpia} limpias · ${c.sucia} sucias · ${c.pendiente} por revisar · ${c.noactuar} ocupadas/bloq.`;
+    if(rack.fecha && state.fecha && rack.fecha!==state.fecha){
+      res.className='res err';
+      res.textContent+=` · ⚠ el rack es del ${rack.fecha}, no del ${state.fecha}`;
+    }
+  }catch(e){
+    res.className='res err';
+    res.textContent='✗ '+(e.message||'Error al leer el rack');
+    state.rack=null;
   }
 }
 
@@ -590,14 +705,55 @@ function calcular(){
       cambioD: null,
     });
   }
+  // ---- integración del rack: backlog de ayer y estados de llegadas ----
+  const rackE = state.rack ? state.rack.estados : {};
+  const rackOcup = state.rack ? (state.rack.ocupadas||{}) : {};
+  const inicio = hhmmToMin(P.inicio);
+  const listasConfirmadas=[]; const porRevisar=[]; const revisarConEntrada=[];
+  if(state.rack){
+    for(const [room,est] of Object.entries(rackE)){
+      if(salidaRooms.has(room)) continue;          // saldrá hoy: su estado cambiará
+      if(prolongSet.has(room)) continue;
+      if(rackOcup[room]) continue;                 // cliente dentro: repaso diario, no planificable aquí
+      const llegada = llegadaRooms.get(room);
+      if(est==='sucia'){
+        if(llegada){
+          // sucia de ayer con entrada hoy: se puede limpiar desde el inicio de jornada
+          const margen = checkin - inicio - P.tSalida;
+          tarjetas.push({room, prio:'azul', dur:P.tSalida, margen,
+            sale:null, entra:llegada.name, lco:null, desde:P.inicio,
+            esProl:false, esRotacion:false, deAyer:true,
+            cambioO:null, cambioD:cambioDestino.get(room)||null});
+        }else{
+          tarjetas.push({room, prio:'verde', dur:P.tSalida, margen:null,
+            sale:null, entra:null, lco:null, desde:P.inicio,
+            esProl:false, esRotacion:false, deAyer:true,
+            cambioO:null, cambioD:null});
+        }
+      }else if(est==='pendiente'){
+        porRevisar.push({room, llegadaHoy:!!llegada});
+        if(llegada) revisarConEntrada.push(room);
+      }else if(est==='limpia' && llegada){
+        listasConfirmadas.push(room);
+      }
+    }
+  }
+
+  if(revisarConEntrada.length){
+    avisos.push({tipo:'revisar', texto:`<b>${revisarConEntrada.length} habitaciones pendientes de revisar</b> tienen entrada hoy: <b>${revisarConEntrada.join(', ')}</b>. Supervisarlas antes de las ${P.checkin}.`});
+  }
+
   // llegadas cuya habitación no sale hoy (ya libre) — informativas
+  const backlogSet = new Set(tarjetas.filter(t=>t.deAyer).map(t=>t.room));
   const llegadasLibres=[];
   for(const [room,l] of llegadaRooms){
-    if(!salidaRooms.has(room)) llegadasLibres.push({room, entra:l.name, cambioD:cambioDestino.get(room)||null});
+    if(salidaRooms.has(room) || backlogSet.has(room)) continue;
+    llegadasLibres.push({room, entra:l.name, cambioD:cambioDestino.get(room)||null,
+      estadoRack: rackE[room]||null});
   }
 
   // orden: margen ascendente dentro de cada prioridad
-  const orden={critica:0,roja:1,naranja:2,amarilla:3,verde:4};
+  const orden={azul:0,critica:1,roja:2,naranja:3,amarilla:4,verde:5};
   tarjetas.sort((a,b)=> orden[a.prio]-orden[b.prio] || (a.margen??999)-(b.margen??999) || a.room.localeCompare(b.room));
 
   // capacidad
@@ -615,13 +771,15 @@ function calcular(){
   const mananaSet=new Set(dejarManana);
   tarjetas.forEach(t=>t.manana=mananaSet.has(t.room));
 
-  state.resultados={tarjetas, llegadasLibres, avisos, necesarios, disponibles, dejarManana, P};
+  state.resultados={tarjetas, llegadasLibres, avisos, necesarios, disponibles, dejarManana, P,
+    porRevisar, listasConfirmadas, conRack: !!state.rack};
 }
 
 function leerParams(){
   return {
     checkout:$('pCheckout').value||'12:00',
     checkin:$('pCheckin').value||'15:00',
+    inicio:$('pInicio').value||'09:00',
     tSalida:parseInt($('pTSalida').value,10)||20,
     tRepaso:parseInt($('pTRepaso').value,10)||5,
     umbral:parseInt($('pUmbral').value,10)||60,
@@ -632,12 +790,15 @@ function leerParams(){
 
 /* ================= RENDER ================= */
 const TITULOS={
+  azul:'Para empezar la mañana · sucias de ayer con entrada hoy',
   critica:'Críticas · no llegan al check-in',
   roja:'Urgentes · margen mínimo',
   naranja:'Rotaciones · entra cliente hoy',
   amarilla:'Repasos · prolongaciones',
   verde:'Sin entrada hoy · pueden esperar',
 };
+const NOMBRES_CHIP={azul:'Desde primera hora',critica:'Críticas',roja:'Urgentes',naranja:'Rotaciones',amarilla:'Repasos',verde:'Pueden esperar'};
+const PRIOS=['azul','critica','roja','naranja','amarilla','verde'];
 function render(){
   const R=state.resultados; if(!R) return;
   $('resultados').style.display='block';
@@ -648,10 +809,8 @@ function render(){
 
   // resumen
   const cuenta=p=>R.tarjetas.filter(t=>t.prio===p).length;
-  $('resumen').innerHTML = ['critica','roja','naranja','amarilla','verde'].map(p=>
-    `<div class="chip c-${p}"><div class="n">${cuenta(p)}</div><div class="t">${
-      {critica:'Críticas',roja:'Urgentes',naranja:'Rotaciones',amarilla:'Repasos',verde:'Pueden esperar'}[p]
-    }</div></div>`).join('');
+  $('resumen').innerHTML = PRIOS.filter(p=>p!=='azul'||R.conRack).map(p=>
+    `<div class="chip c-${p}"><div class="n">${cuenta(p)}</div><div class="t">${NOMBRES_CHIP[p]}</div></div>`).join('');
 
   // capacidad
   const pct=Math.min(100, R.necesarios/R.disponibles*100);
@@ -679,21 +838,28 @@ function render(){
           ${t.room}${t.lco?`<small>LCO ${t.lco}</small>`:(t.esProl?'<small>repaso</small>':'')}
         </div>`).join('')}</div></div>`).join('')+
     `<div class="leyenda-rack">
-      <span class="l-critica">Crítica</span><span class="l-roja">Urgente</span>
+      <span class="l-azul">Desde primera hora</span><span class="l-critica">Crítica</span><span class="l-roja">Urgente</span>
       <span class="l-naranja">Rotación</span><span class="l-amarilla">Repaso</span>
       <span class="l-verde">Puede esperar</span> · Toca una habitación para marcarla limpia</div>`;
 
   // secciones
-  $('secciones').innerHTML = ['critica','roja','naranja','amarilla','verde'].map(p=>{
+  $('secciones').innerHTML = PRIOS.map(p=>{
     const ts=R.tarjetas.filter(t=>t.prio===p);
     if(!ts.length) return '';
     return `<div class="seccion s-${p}"><h2>${TITULOS[p]} <span class="cuenta">${ts.length} hab.</span></h2>
       <div class="tarjetas">${ts.map(t=>tarjetaHTML(t,R.P)).join('')}</div></div>`;
-  }).join('') + (R.llegadasLibres.length?`
-    <div class="seccion s-info"><h2>Entradas a habitación ya libre <span class="cuenta">${R.llegadasLibres.length} hab. · no requieren limpieza de salida</span></h2>
+  }).join('') + (R.porRevisar && R.porRevisar.length?`
+    <div class="seccion s-info"><h2>Pendientes de revisar <span class="cuenta">${R.porRevisar.length} hab. · limpiadas, falta supervisión</span></h2>
+    <div class="tarjetas">${R.porRevisar.map(x=>`
+      <div class="tarjeta b-amarilla"><div class="hab">${x.room}</div>
+      ${x.llegadaHoy?'<span class="tag t-revisar">Revisar antes del check-in · entra cliente hoy</span>':'<span class="tag t-revisar">Solo supervisión</span>'}</div>`).join('')}</div></div>`:'')
+  + (R.llegadasLibres.length?`
+    <div class="seccion s-info"><h2>Entradas a habitación ya libre <span class="cuenta">${R.llegadasLibres.length} hab.</span></h2>
     <div class="tarjetas">${R.llegadasLibres.map(l=>`
-      <div class="tarjeta"><div class="hab">${l.room}</div>
+      <div class="tarjeta ${l.estadoRack==='limpia'?'b-verde':''}"><div class="hab">${l.room}</div>
       <div class="linea1">Entra: <b>${nombreCorto(l.entra)}</b></div>
+      ${l.estadoRack==='limpia'?'<span class="tag t-lista">✓ Confirmada lista</span>':''}
+      ${l.estadoRack==='noactuar'?'<span class="tag t-revisar">Rack: ocupada/bloqueada · verificar</span>':''}
       ${l.cambioD?`<span class="tag t-cambio">Recibe cambio desde ${l.cambioD.de}</span>`:''}</div>`).join('')}</div></div>`:'');
 
   // interacciones marcar limpia
@@ -712,7 +878,7 @@ function tarjetaHTML(t,P){
       : `<div class="margen">${t.margen}′<small>de margen</small></div>`);
   return `<div class="tarjeta b-${t.prio} ${state.limpias[t.room]?'limpia':''}" data-room="${t.room}">
     <div class="hab">${t.room}</div>${margenTxt}
-    <div class="linea1">Sale: <b>${nombreCorto(t.sale)}</b></div>
+    ${t.sale?`<div class="linea1">Sale: <b>${nombreCorto(t.sale)}</b></div>`:''}
     ${t.entra?`<div class="linea1">Entra: <b>${nombreCorto(t.entra)}</b></div>`:''}
     <div class="horas">
       ${t.lco?`<span class="lco">LCO hasta ${t.lco}</span> · `:''}
@@ -720,6 +886,7 @@ function tarjetaHTML(t,P){
     </div>
     ${t.esProl?'<span class="tag" style="background:var(--amarilla-bg);color:#7a5c00">Solo repaso</span>':''}
     ${t.cambioO?`<span class="tag t-cambio">Se muda a ${t.cambioO.a}</span>`:''}
+    ${t.deAyer?'<span class="tag t-ayer">Sucia de ayer</span>':''}
     ${t.manana?'<span class="tag t-manana">Candidata a mañana</span>':''}
   </div>`;
 }
@@ -730,6 +897,7 @@ function cargarParams(){
   try{
     const p=JSON.parse(localStorage.getItem(LS_PARAMS)||'null'); if(!p) return;
     $('pCheckout').value=p.checkout; $('pCheckin').value=p.checkin;
+    if(p.inicio) $('pInicio').value=p.inicio;
     $('pTSalida').value=p.tSalida; $('pTRepaso').value=p.tRepaso;
     $('pUmbral').value=p.umbral??60;
     $('pCamareras').value=p.nCamareras; $('pHoras').value=p.horas;
@@ -773,14 +941,15 @@ function actualizarEstado(){
   $('estado1').className = 'estado'+(s&&l?' ok':'');
   $('btnGenerar').disabled = !(s&&l);
 }
-['Salidas','Llegadas'].forEach(t=>{
+['Salidas','Llegadas','Rack'].forEach(t=>{
   const drop=$('drop'+t), input=$('file'+t), tipo=t.toLowerCase();
-  input.addEventListener('change',e=>{ if(e.target.files[0]) cargarPDF(e.target.files[0],tipo); });
+  const manejar = f => tipo==='rack' ? cargarRack(f) : cargarPDF(f,tipo);
+  input.addEventListener('change',e=>{ if(e.target.files[0]) manejar(e.target.files[0]); });
   drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('arrastre');});
   drop.addEventListener('dragleave',()=>drop.classList.remove('arrastre'));
   drop.addEventListener('drop',e=>{
     e.preventDefault();drop.classList.remove('arrastre');
-    if(e.dataTransfer.files[0]) cargarPDF(e.dataTransfer.files[0],tipo);
+    if(e.dataTransfer.files[0]) manejar(e.dataTransfer.files[0]);
   });
 });
 $('btnTexto').onclick=()=>{
@@ -813,7 +982,7 @@ $('btnCSV').onclick=()=>{
   const filas=[['Habitacion','Prioridad','Margen_min','Limpiar_desde','LCO','Duracion_min','Sale','Entra','Limpia','Dejar_manana']];
   R.tarjetas.forEach(t=>filas.push([
     t.room,t.prio,t.margen??'',t.desde,t.lco||'',t.dur,
-    t.sale.replace(/,/g,' '),(t.entra||'').replace(/,/g,' '),
+    (t.sale||'').replace(/,/g,' '),(t.entra||'').replace(/,/g,' '),
     state.limpias[t.room]?'SI':'',t.manana?'SI':'',
   ]));
   const csv=filas.map(f=>f.join(',')).join('\n');
