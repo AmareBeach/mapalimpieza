@@ -274,11 +274,17 @@ button.mas:hover{background:var(--mar);color:#fff}
         <div class="res" id="resLlegadas"></div>
         <input type="file" accept="application/pdf" id="fileLlegadas">
       </label>
-      <label class="drop" id="dropRack" style="grid-column:1/-1">
-        <div class="tit">PDF Rack de habitaciones <span style="font-weight:400;text-transform:none">(opcional)</span></div>
-        <div class="sub">Añade el estado real de cada habitación: sucias de ayer, pendientes de revisar y listas</div>
+      <label class="drop" id="dropRack">
+        <div class="tit">PDF Rack <span style="font-weight:400;text-transform:none">(opcional)</span></div>
+        <div class="sub">Estado real: sucias de ayer, pendientes de revisar, listas</div>
         <div class="res" id="resRack"></div>
         <input type="file" accept="application/pdf" id="fileRack">
+      </label>
+      <label class="drop" id="dropAlojados">
+        <div class="tit">PDF de alojados <span style="font-weight:400;text-transform:none">(opcional)</span></div>
+        <div class="sub">Habitaciones ocupadas: afina el backlog, detecta conflictos y suma el repaso diario</div>
+        <div class="res" id="resAlojados"></div>
+        <input type="file" accept="application/pdf" id="fileAlojados">
       </label>
     </div>
     <details class="alt">
@@ -318,6 +324,7 @@ button.mas:hover{background:var(--mar);color:#fff}
       <div class="param"><label>Inicio de jornada</label><input type="time" id="pInicio" value="09:00"></div>
       <div class="param"><label>Min. limpieza salida</label><input type="number" id="pTSalida" value="20" min="1"></div>
       <div class="param"><label>Min. repaso prolongación</label><input type="number" id="pTRepaso" value="5" min="1"></div>
+      <div class="param"><label>Min. repaso diario ocupada (0 = no contar)</label><input type="number" id="pTDiario" value="10" min="0"></div>
       <div class="param"><label>Umbral urgente (min de margen)</label><input type="number" id="pUmbral" value="60" min="0"></div>
       <div class="param"><label>Nº de camareras</label><input type="number" id="pCamareras" value="4" min="1"></div>
       <div class="param"><label>Horas efectivas por camarera</label><input type="number" id="pHoras" value="6" min="1" step="0.5"></div>
@@ -360,7 +367,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 const state = {
   salidas: [],      // {room, name, toks}
   llegadas: [],
-  rack: null,       // {estados:{room->'limpia'|'sucia'|'pendiente'|'noactuar'}, fecha}
+  rack: null,       // {estados:{room->'limpia'|'sucia'|'pendiente'|'noactuar'}, ocupadas, fecha}
+  alojados: null,   // {rooms:Map(room->name), fecha}
   fecha: null,      // 'DD.MM.YYYY' del PDF
   limpias: {},      // room -> true
   resultados: null,
@@ -562,6 +570,31 @@ async function cargarRack(file){
   }
 }
 
+async function cargarAlojados(file){
+  const res = $('resAlojados');
+  res.className='res'; res.textContent='Leyendo…';
+  try{
+    const lines = await extractLines(file);
+    const listado = parseListado(lines.join('\n'));
+    if(listado.length===0) throw new Error('No se encontraron habitaciones.');
+    const rooms = new Map();
+    listado.forEach(e=>{ if(!rooms.has(e.room)) rooms.set(e.room, e.name); });
+    let fecha=null;
+    for(const l of lines){ const m=l.match(/Fecha\s+(\d{2}\.\d{2}\.\d{4})/); if(m){fecha=m[1];break;} }
+    state.alojados = {rooms, fecha};
+    res.className='res ok';
+    res.textContent=`✓ ${file.name} · ${rooms.size} habitaciones ocupadas`;
+    if(fecha && state.fecha && fecha!==state.fecha){
+      res.className='res err';
+      res.textContent+=` · ⚠ es del ${fecha}, no del ${state.fecha}`;
+    }
+  }catch(e){
+    res.className='res err';
+    res.textContent='✗ '+(e.message||'Error al leer el PDF');
+    state.alojados=null;
+  }
+}
+
 /* ================= FILAS DINÁMICAS ================= */
 const HORAS_LCO = ['13:00','14:00','15:00','16:00','17:00','18:00'];
 
@@ -608,6 +641,26 @@ function leerProl(){
     if(de&&a) out.push({de,a,hecha});
   });
   return out;
+}
+
+function levCorta(a,b){
+  if(Math.abs(a.length-b.length)>2) return 99;
+  const m=a.length,n=b.length,d=[];
+  for(let i=0;i<=m;i++){d[i]=[i];for(let j=1;j<=n;j++)d[i][j]=i?0:j;}
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[m][n];
+}
+function nombresCoinciden(n1,n2){
+  const a=normalizeName(n1), b=normalizeName(n2);
+  if(!a.length||!b.length) return false;
+  let shared=0;
+  for(const t of a){
+    if(b.includes(t)) shared++;
+    else if(t.length>=5 && b.some(u=>u.length>=5 && levCorta(t,u)<=2)) shared++;
+  }
+  const minLen=Math.min(a.length,b.length);
+  return (shared>=2 && shared/minLen>=0.6) || (minLen===1 && shared>=1);
 }
 
 /* ================= DETECCIÓN POR NOMBRE ================= */
@@ -708,13 +761,15 @@ function calcular(){
   // ---- integración del rack: backlog de ayer y estados de llegadas ----
   const rackE = state.rack ? state.rack.estados : {};
   const rackOcup = state.rack ? (state.rack.ocupadas||{}) : {};
+  const aloj = state.alojados ? state.alojados.rooms : null;
+  const ocupada = room => aloj ? aloj.has(room) : !!rackOcup[room];
   const inicio = hhmmToMin(P.inicio);
   const listasConfirmadas=[]; const porRevisar=[]; const revisarConEntrada=[];
   if(state.rack){
     for(const [room,est] of Object.entries(rackE)){
       if(salidaRooms.has(room)) continue;          // saldrá hoy: su estado cambiará
       if(prolongSet.has(room)) continue;
-      if(rackOcup[room]) continue;                 // cliente dentro: repaso diario, no planificable aquí
+      if(ocupada(room)) continue;                  // cliente dentro: repaso diario, no planificable aquí
       const llegada = llegadaRooms.get(room);
       if(est==='sucia'){
         if(llegada){
@@ -739,6 +794,15 @@ function calcular(){
     }
   }
 
+  if(aloj){
+    for(const [room,l] of llegadaRooms){
+      if(salidaRooms.has(room) || prolongSet.has(room) || cambioDestino.has(room)) continue;
+      if(aloj.has(room)){
+        if(nombresCoinciden(l.name, aloj.get(room))) continue;   // ya alojado (early check-in)
+        avisos.push({tipo:'conflicto', room, texto:`<span class="etiq">Conflicto</span> La <b>${room}</b> tiene entrada hoy (<b>${nombreCorto(l.name)}</b>) pero está ocupada por <b>${nombreCorto(aloj.get(room))}</b>, que no figura en salidas. Verificar asignación con recepción.`});
+      }
+    }
+  }
   if(revisarConEntrada.length){
     avisos.push({tipo:'revisar', texto:`<b>${revisarConEntrada.length} habitaciones pendientes de revisar</b> tienen entrada hoy: <b>${revisarConEntrada.join(', ')}</b>. Supervisarlas antes de las ${P.checkin}.`});
   }
@@ -749,7 +813,7 @@ function calcular(){
   for(const [room,l] of llegadaRooms){
     if(salidaRooms.has(room) || backlogSet.has(room)) continue;
     llegadasLibres.push({room, entra:l.name, cambioD:cambioDestino.get(room)||null,
-      estadoRack: rackE[room]||null});
+      estadoRack: rackE[room]||null, ocupadaAhora: aloj ? aloj.has(room) : false});
   }
 
   // orden: margen ascendente dentro de cada prioridad
@@ -757,7 +821,14 @@ function calcular(){
   tarjetas.sort((a,b)=> orden[a.prio]-orden[b.prio] || (a.margen??999)-(b.margen??999) || a.room.localeCompare(b.room));
 
   // capacidad
-  const necesarios = tarjetas.reduce((acc,t)=>acc+t.dur,0);
+  let repasoDiario = 0, nDiario = 0;
+  if(aloj && P.tDiario>0){
+    for(const room of aloj.keys()){
+      if(!salidaRooms.has(room) && !prolongSet.has(room)) nDiario++;
+    }
+    repasoDiario = nDiario * P.tDiario;
+  }
+  const necesarios = tarjetas.reduce((acc,t)=>acc+t.dur,0) + repasoDiario;
   const disponibles = P.nCamareras * P.horas * 60;
   let dejarManana=[];
   if(necesarios>disponibles){
@@ -772,7 +843,7 @@ function calcular(){
   tarjetas.forEach(t=>t.manana=mananaSet.has(t.room));
 
   state.resultados={tarjetas, llegadasLibres, avisos, necesarios, disponibles, dejarManana, P,
-    porRevisar, listasConfirmadas, conRack: !!state.rack};
+    porRevisar, listasConfirmadas, conRack: !!state.rack, nDiario, repasoDiario};
 }
 
 function leerParams(){
@@ -782,6 +853,7 @@ function leerParams(){
     inicio:$('pInicio').value||'09:00',
     tSalida:parseInt($('pTSalida').value,10)||20,
     tRepaso:parseInt($('pTRepaso').value,10)||5,
+    tDiario:Math.max(0,parseInt($('pTDiario').value,10)||0),
     umbral:parseInt($('pUmbral').value,10)||60,
     nCamareras:parseInt($('pCamareras').value,10)||1,
     horas:parseFloat($('pHoras').value)||6,
@@ -824,7 +896,7 @@ function render(){
   $('capacidad').innerHTML=`
     <h3 class="disp">¿Cabe el día?</h3>
     <div class="barra"><div class="relleno ${clase}" style="width:${pct}%"></div></div>
-    <div class="leyenda"><span>Trabajo: <b>${R.necesarios} min</b> (${R.tarjetas.length} habitaciones)</span>
+    <div class="leyenda"><span>Trabajo: <b>${R.necesarios} min</b> (${R.tarjetas.length} hab.${R.repasoDiario?` + repaso diario de ${R.nDiario} ocupadas × ${R.P.tDiario}′ = ${R.repasoDiario}′`:''})</span>
     <span>Capacidad: <b>${R.disponibles} min</b> (${R.P.nCamareras} camareras × ${R.P.horas} h)</span></div>${sug}`;
 
   // rack por plantas
@@ -899,6 +971,7 @@ function cargarParams(){
     $('pCheckout').value=p.checkout; $('pCheckin').value=p.checkin;
     if(p.inicio) $('pInicio').value=p.inicio;
     $('pTSalida').value=p.tSalida; $('pTRepaso').value=p.tRepaso;
+    if(p.tDiario!==undefined) $('pTDiario').value=p.tDiario;
     $('pUmbral').value=p.umbral??60;
     $('pCamareras').value=p.nCamareras; $('pHoras').value=p.horas;
   }catch(e){}
@@ -941,9 +1014,9 @@ function actualizarEstado(){
   $('estado1').className = 'estado'+(s&&l?' ok':'');
   $('btnGenerar').disabled = !(s&&l);
 }
-['Salidas','Llegadas','Rack'].forEach(t=>{
+['Salidas','Llegadas','Rack','Alojados'].forEach(t=>{
   const drop=$('drop'+t), input=$('file'+t), tipo=t.toLowerCase();
-  const manejar = f => tipo==='rack' ? cargarRack(f) : cargarPDF(f,tipo);
+  const manejar = f => tipo==='rack' ? cargarRack(f) : (tipo==='alojados' ? cargarAlojados(f) : cargarPDF(f,tipo));
   input.addEventListener('change',e=>{ if(e.target.files[0]) manejar(e.target.files[0]); });
   drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('arrastre');});
   drop.addEventListener('dragleave',()=>drop.classList.remove('arrastre'));
